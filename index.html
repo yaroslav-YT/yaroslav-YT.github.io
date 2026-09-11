@@ -1,43 +1,97 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>minecraft 2d really</title>
+    <title>Infinite 2D Minecraft with Zombie</title>
     <style>
         body {
             margin: 0;
             padding: 0;
             background-color: #75a7ff;
             overflow: hidden;
-            font-family: sans-serif;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            user-select: none;
         }
         canvas {
             display: block;
-            margin: 0 auto;
-            background-color: #87CEEB; /* Цвет неба */
         }
         #ui {
             position: absolute;
-            top: 10px;
-            left: 10px;
+            top: 15px;
+            left: 15px;
             color: white;
-            text-shadow: 2px 2px 4px #000;
-            font-size: 16px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+            font-size: 14px;
             pointer-events: none;
+            background: rgba(0, 0, 0, 0.4);
+            padding: 15px;
+            border-radius: 6px;
+        }
+        #stats {
+            margin-top: 10px;
+            font-weight: bold;
+        }
+        #hotbar-container {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.6);
+            padding: 6px;
+            border: 4px solid #3c3c3c;
+            border-radius: 4px;
+            display: flex;
+            gap: 4px;
+        }
+        .slot {
+            width: 44px;
+            height: 44px;
+            background: #8b8b8b;
+            border: 4px solid #373737;
+            box-shadow: inset 3px 3px 0px #ffffff, inset -3px -3px 0px #555555;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            cursor: pointer;
+        }
+        .slot.selected {
+            border: 4px solid #ffffff;
+            box-shadow: none;
+        }
+        .slot-icon {
+            width: 32px;
+            height: 32px;
+        }
+        .slot-key {
+            position: absolute;
+            top: 2px;
+            left: 4px;
+            color: #ddd;
+            font-size: 10px;
+            font-weight: bold;
+            text-shadow: 1px 1px 2px #000;
         }
     </style>
 </head>
 <body>
 
     <div id="ui">
-        <h3>Управление:</h3>
-        <p>A / D — Движение влево / вправо</p>
-        <p>W / Пробел — Прыжок</p>
-        <p>ЛКМ — Сломать блок</p>
-        <p>ПКМ — Поставить блок</p>
-        <p>Выбранный блок для установки: Земля</p>
+        <h2 style="margin:0 0 10px 0;">Minecraft 2D</h2>
+        <strong>Controls:</strong><br>
+        • A / D — Move Left / Right<br>
+        • W / Space — Jump<br>
+        • Left Click — Break Block / Attack Zombie<br>
+        • Right Click — Place Block<br>
+        • Keys 1 to 0 — Select Hotbar Item
+        <div id="stats">
+            <span style="color: #ff4d4d;">❤️ Player HP: <span id="hp-val">20</span></span> | 
+            <span style="color: #55ff55;">🧟 Zombie: <span id="zombie-status">Alive</span></span>
+        </div>
     </div>
+
+    <div id="hotbar-container"></div>
 
     <canvas id="gameCanvas"></canvas>
 
@@ -45,182 +99,198 @@
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
 
-// Настройка размеров экрана
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
 
-// Игровые константы
-const TILE_SIZE = 32; 
-const COLS = Math.ceil(canvas.width / TILE_SIZE);
-const ROWS = Math.ceil(canvas.height / TILE_SIZE);
+// Game Constants
+const BLOCK_SIZE = 32; 
+const CHUNK_SIZE = 16;
 const GRAVITY = 0.4;
+const SCREEN_BLOCKS_X = Math.ceil(canvas.width / BLOCK_SIZE);
+const SCREEN_BLOCKS_Y = Math.ceil(canvas.height / BLOCK_SIZE);
 
-// Идентификаторы блоков (ID)
-const AIR = 0;
-const GRASS = 1;
-const DIRT = 2;
-const STONE = 3;
+// Generation Noise
+function getNoise(x) {
+    let num = Math.sin(x * 0.1) * 4 + Math.cos(x * 0.03) * 6;
+    return Math.floor(SCREEN_BLOCKS_Y / 1.8 + num);
+}
 
-// Цвета блоков
-const BLOCK_COLORS = {
-    [GRASS]: "#5cc43e",
-    [DIRT]: "#85542b",
-    [STONE]: "#737373"
+// Blocks
+const AIR = 0, GRASS = 1, DIRT = 2, STONE = 3, COAL = 4, IRON = 5, GOLD = 6, DIAMOND = 7, LOG = 8, LEAVES = 9, PLANK = 10, BRICK = 11;
+
+const BLOCKS = {
+    [GRASS]: { name: "Grass", colors: ["#5cc43e", "#4fa835", "#3f8a29", "#85542b"] },
+    [DIRT]: { name: "Dirt", colors: ["#866043", "#745136", "#5c3e26", "#4a321e"] },
+    [STONE]: { name: "Stone", colors: ["#737373", "#616161", "#525252", "#3a3a3a"] },
+    [COAL]: { name: "Coal Ore", colors: ["#737373", "#525252", "#242424", "#111111"] },
+    [IRON]: { name: "Iron Ore", colors: ["#737373", "#616161", "#d8af93", "#af8568"] },
+    [GOLD]: { name: "Gold Ore", colors: ["#737373", "#525252", "#fcee4b", "#cca825"] },
+    [DIAMOND]: { name: "Diamond Ore", colors: ["#737373", "#525252", "#55e2e2", "#2cb5ba"] },
+    [LOG]: { name: "Oak Log", colors: ["#634a2b", "#503b20", "#3d2b14", "#775b36"] },
+    [LEAVES]: { name: "Oak Leaves", colors: ["#37771e", "#2c6117", "#214b10", "#459326"] },
+    [PLANK]: { name: "Oak Planks", colors: ["#b9955d", "#9a7a49", "#83663a", "#c7a871"] },
+    [BRICK]: { name: "Bricks", colors: ["#964b3c", "#823c30", "#692e24", "#b35c4c"] }
 };
 
-// Генерация сетки мира
-let world = [];
-function generateWorld() {
-    for (let x = 0; x < COLS; x++) {
-        world[x] = [];
-        // Простая синусоида для генерации рельефа холмов
-        let groundHeight = Math.floor(ROWS / 2 + Math.sin(x * 0.15) * 3);
-        
-        for (let y = 0; y < ROWS; y++) {
-            if (y < groundHeight) {
-                world[x][y] = AIR;
-            } else if (y === groundHeight) {
-                world[x][y] = GRASS;
-            } else if (y > groundHeight && y < groundHeight + 4) {
-                world[x][y] = DIRT;
-            } else {
-                world[x][y] = STONE;
+const hotbarItems = [GRASS, DIRT, STONE, PLANK, BRICK, LOG, LEAVES, COAL, IRON, DIAMOND];
+let selectedSlotIndex = 0;
+let chunks = {};
+
+function generateChunk(chunkX) {
+    if (chunks[chunkX]) return;
+    let chunkData = [];
+    let startX = chunkX * CHUNK_SIZE;
+
+    for (let i = 0; i < CHUNK_SIZE; i++) {
+        let absX = startX + i;
+        let col = [];
+        let surfaceY = getNoise(absX);
+
+        for (let absY = 0; absY < SCREEN_BLOCKS_Y + 10; absY++) {
+            if (absY < surfaceY) col[absY] = AIR;
+            else if (absY === surfaceY) col[absY] = GRASS;
+            else if (absY > surfaceY && absY < surfaceY + 5) col[absY] = DIRT;
+            else {
+                let rand = Math.random();
+                if (rand < 0.01 && absY > surfaceY + 12) col[absY] = DIAMOND;
+                else if (rand < 0.02 && absY > surfaceY + 10) col[absY] = GOLD;
+                else if (rand < 0.04 && absY > surfaceY + 7) col[absY] = IRON;
+                else if (rand < 0.08 && absY > surfaceY + 5) col[absY] = COAL;
+                else col[absY] = STONE;
             }
         }
+
+        if (absX % 13 === 0 && Math.abs(absX) > 5) {
+            let treeY = surfaceY;
+            if (col[treeY] === GRASS) {
+                for (let h = 1; h <= 4; h++) {
+                    if (treeY - h >= 0) col[treeY - h] = LOG;
+                }
+                let leafCenter = treeY - 4;
+                for (let lx = -2; lx <= 2; lx++) {
+                    for (let ly = -2; ly <= 0; ly++) {
+                        let targetX = absX + lx;
+                        let targetY = leafCenter + ly;
+                        if (lx === 0) {
+                            if (targetY >= 0 && col[targetY] === AIR) col[targetY] = LEAVES;
+                        } else {
+                            setTimeout(() => setGlobalBlock(targetX, targetY, LEAVES, true), 0);
+                        }
+                    }
+                }
+            }
+        }
+        chunkData.push(col);
+    }
+    chunks[chunkX] = chunkData;
+}
+
+function getGlobalBlock(gridX, gridY) {
+    let chunkX = Math.floor(gridX / CHUNK_SIZE);
+    let localX = ((gridX % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+    generateChunk(chunkX);
+    if(gridY < 0 || gridY >= chunks[chunkX][localX].length) return AIR;
+    return chunks[chunkX][localX][localX] !== undefined ? chunks[chunkX][localX][gridY] : AIR;
+}
+
+function setGlobalBlock(gridX, gridY, type, overrideAirOnly = false) {
+    let chunkX = Math.floor(gridX / CHUNK_SIZE);
+    let localX = ((gridX % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+    generateChunk(chunkX);
+    if (gridY >= 0 && gridY < chunks[chunkX][localX].length) {
+        if (overrideAirOnly && chunks[chunkX][localX][gridY] !== AIR) return;
+        chunks[chunkX][localX][gridY] = type;
     }
 }
 
-// Объект игрока
+// Camera & Entities
+let cameraX = 0;
 const player = {
-    x: 100,
-    y: 50,
-    width: 20,
-    height: 52,
+    x: BLOCK_SIZE * 5,
+    y: (getNoise(5) - 3) * BLOCK_SIZE,
+    width: 22,
+    height: 54,
     vx: 0,
     vy: 0,
-    speed: 4,
-    jumpForce: 9,
+    speed: 4.5,
+    jumpForce: 9.5,
     onGround: false,
-    color: "#ffc0cb" // Скин Стива (розовый силуэт для простоты)
+    hp: 20,
+    invulnerableFrames: 0
 };
 
-// Отслеживание нажатий клавиш
-const keys = {};
-window.addEventListener("keydown", e => keys[e.code] = true);
-window.addEventListener("keyup", e => keys[e.code] = false);
+const zombie = {
+    x: BLOCK_SIZE * 12,
+    y: (getNoise(12) - 3) * BLOCK_SIZE,
+    width: 22,
+    height: 54,
+    vx: 0,
+    vy: 0,
+    speed: 2,
+    jumpForce: 9,
+    onGround: false,
+    hp: 15,
+    alive: true,
+    knockbackX: 0
+};
 
-// Отключение контекстного меню при клике ПКМ на холст
+// Controls
+const keys = {};
+window.addEventListener("keydown", e => {
+    keys[e.code] = true;
+    if (e.code.startsWith("Digit")) {
+        let num = parseInt(e.code.replace("Digit", ""));
+        let index = num === 0 ? 9 : num - 1;
+        if (index < hotbarItems.length) {
+            selectedSlotIndex = index;
+            updateHotbarUI();
+        }
+    }
+});
+window.addEventListener("keyup", e => keys[e.code] = false);
 canvas.addEventListener("contextmenu", e => e.preventDefault());
 
-// Взаимодействие с миром (клики мыши)
 window.addEventListener("mousedown", e => {
     const rect = canvas.getBoundingClientRect();
-    const mouseX = e.clientX - rect.left;
+    const mouseX = e.clientX - rect.left + cameraX;
     const mouseY = e.clientY - rect.top;
     
-    // Перевод координат мыши в координаты сетки блоков
-    const blockX = Math.floor(mouseX / TILE_SIZE);
-    const blockY = Math.floor(mouseY / TILE_SIZE);
+    // Check if player clicked zombie to attack
+    if (zombie.alive && 
+        mouseX >= zombie.x && mouseX <= zombie.x + zombie.width &&
+        mouseY >= zombie.y && mouseY <= zombie.y + zombie.height) {
+        
+        zombie.hp -= 3;
+        zombie.knockbackX = (zombie.x > player.x) ? 8 : -8;
+        zombie.vy = -4; // Slight pop up on hit
+        if (zombie.hp <= 0) {
+            zombie.alive = false;
+            document.getElementById("zombie-status").innerText = "Dead (Respawning...)";
+            setTimeout(respawnZombie, 5000);
+        }
+        return;
+    }
+
+    const gridX = Math.floor(mouseX / BLOCK_SIZE);
+    const gridY = Math.floor(mouseY / BLOCK_SIZE);
     
-    if (blockX >= 0 && blockX < COLS && blockY >= 0 && blockY < ROWS) {
-        if (e.button === 0) {
-            // ЛКМ: Разрушить блок
-            world[blockX][blockY] = AIR;
-        } else if (e.button === 2) {
-            // ПКМ: Поставить землю (только на пустое место)
-            if (world[blockX][blockY] === AIR) {
-                world[blockX][blockY] = DIRT;
+    if (e.button === 0) {
+        setGlobalBlock(gridX, gridY, AIR);
+    } else if (e.button === 2) {
+        if (getGlobalBlock(gridX, gridY) === AIR) {
+            const pGridLeft = Math.floor(player.x / BLOCK_SIZE);
+            const pGridRight = Math.floor((player.x + player.width) / BLOCK_SIZE);
+            const pGridTop = Math.floor(player.y / BLOCK_SIZE);
+            const pGridBottom = Math.floor((player.y + player.height) / BLOCK_SIZE);
+            
+            if (!(gridX >= pGridLeft && gridX <= pGridRight && gridY >= pGridTop && gridY <= pGridBottom)) {
+                setGlobalBlock(gridX, gridY, hotbarItems[selectedSlotIndex]);
             }
         }
     }
 });
 
-// Проверка коллизий (физика твердых блоков)
-function checkCollision(x, y) {
-    const blockX = Math.floor(x / TILE_SIZE);
-    const blockY = Math.floor(y / TILE_SIZE);
-    
-    if (blockX < 0 || blockX >= COLS || blockY < 0 || blockY >= ROWS) {
-        return true; // Границы экрана твердые
-    }
-    return world[blockX][blockY] !== AIR;
-}
-
-// Физика и логика обновлений
-function update() {
-    // Движение по горизонтали
-    player.vx = 0;
-    if (keys["KeyA"] || keys["ArrowLeft"]) player.vx = -player.speed;
-    if (keys["KeyD"] || keys["ArrowRight"]) player.vx = player.speed;
-
-    // Прыжок
-    if ((keys["Space"] || keys["KeyW"] || keys["ArrowUp"]) && player.onGround) {
-        player.vy = -player.jumpForce;
-        player.onGround = false;
-    }
-
-    // Применение гравитации
-    player.vy += GRAVITY;
-
-    // Проверка столкновений по оси X
-    player.x += player.vx;
-    if (checkCollision(player.x, player.y) || checkCollision(player.x + player.width, player.y) ||
-        checkCollision(player.x, player.y + player.height - 1) || checkCollision(player.x + player.width, player.y + player.height - 1)) {
-        player.x -= player.vx;
-    }
-
-    // Проверка столкновений по оси Y
-    player.y += player.vy;
-    player.onGround = false;
-    if (checkCollision(player.x, player.y) || checkCollision(player.x + player.width, player.y) ||
-        checkCollision(player.x, player.y + player.height) || checkCollision(player.x + player.width, player.y + player.height)) {
-        
-        if (player.vy > 0) {
-            player.onGround = true;
-            // Выравнивание по верхней границе блока
-            player.y = Math.floor((player.y + player.height) / TILE_SIZE) * TILE_SIZE - player.height;
-        } else if (player.vy < 0) {
-            // Удар головой о потолок
-            player.y = Math.ceil(player.y / TILE_SIZE) * TILE_SIZE;
-        }
-        player.vy = 0;
-    }
-}
-
-// Рендеринг (отрисовка) игры
-function draw() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    // Рисуем блоки
-    for (let x = 0; x < COLS; x++) {
-        for (let y = 0; y < ROWS; y++) {
-            let blockType = world[x][y];
-            if (blockType !== AIR) {
-                ctx.fillStyle = BLOCK_COLORS[blockType];
-                ctx.fillRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
-                // Рисуем сетку вокруг блоков
-                ctx.strokeStyle = "rgba(0, 0, 0, 0.1)";
-                ctx.strokeRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
-            }
-        }
-    }
-
-    // Рисуем игрока
-    ctx.fillStyle = player.color;
-    ctx.fillRect(player.x, player.y, player.width, player.height);
-}
-
-// Главный игровой цикл
-function gameLoop() {
-    update();
-    draw();
-    requestAnimationFrame(gameLoop);
-}
-
-// Старт игры
-generateWorld();
-gameLoop();
-</script>
-
-</body>
-</html>
+function respawnZombie() {
+    let spawnGridX = Math.floor(player.x / BLOCK_SIZE) + (Math.random() > 0.5 ? 15 : -15);
+    zombie.x = spawnGridX * BLOCK_SIZE;
+zombie.hp = 15;zombie.vx = 0;zombie.vy = 0;zombie.alive = true;document.getElementById("zombie-status").innerText = "Alive";}function checkEntityCollision(ent, newX, newY) {let gridLeft = Math.floor(newX / BLOCK_SIZE);let gridRight = Math.floor((newX + ent.width) / BLOCK_SIZE);let gridTop = Math.floor(newY / BLOCK_SIZE);let gridBottom = Math.floor((newY + ent.height) / BLOCK_SIZE);for (let gx = gridLeft; gx <= gridRight; gx++) {for (let gy = gridTop; gy <= gridBottom; gy++) {if (getGlobalBlock(gx, gy) !== AIR) return true;}}return false;}function update() {// 1. Player Physicsplayer.vx = 0;if (keys["KeyA"] || keys["ArrowLeft"]) player.vx = -player.speed;if (keys["KeyD"] || keys["ArrowRight"]) player.vx = player.speed;if ((keys["Space"] || keys["KeyW"] || keys["ArrowUp"]) && player.onGround) {player.vy = -player.jumpForce;player.onGround = false;}player.vy += GRAVITY;player.x += player.vx;if (checkEntityCollision(player, player.x, player.y)) player.x -= player.vx;player.y += player.vy;player.onGround = false;if (checkEntityCollision(player, player.x, player.y)) {if (player.vy > 0) {player.onGround = true;player.y = Math.floor((player.y + player.height) / BLOCK_SIZE) * BLOCK_SIZE - player.height;} else if (player.vy < 0) {player.y = Math.ceil(player.y / BLOCK_SIZE) * BLOCK_SIZE;}player.vy = 0;}if (player.invulnerableFrames > 0) player.invulnerableFrames--;// 2. Zombie AI & Physicsif (zombie.alive) {let dir = player.x - zombie.x;if (Math.abs(dir) > 5) {zombie.vx = dir > 0 ? zombie.speed : -zombie.speed;} else {zombie.vx = 0;}if (Math.abs(zombie.knockbackX) > 0.1) {zombie.vx = zombie.knockbackX;zombie.knockbackX *= 0.85;}zombie.vy += GRAVITY;zombie.x += zombie.vx;if (checkEntityCollision(zombie, zombie.x, zombie.y)) {zombie.x -= zombie.vx;if (zombie.onGround && Math.abs(zombie.vx) > 0.1) {zombie.vy = -zombie.jumpForce;zombie.onGround = false;}}zombie.y += zombie.vy;zombie.onGround = false;if (checkEntityCollision(zombie, zombie.x, zombie.y)) {if (zombie.vy > 0) {zombie.onGround = true;zombie.y = Math.floor((zombie.y + zombie.height) / BLOCK_SIZE) * BLOCK_SIZE - zombie.height;} else if (zombie.vy < 0) {zombie.y = Math.ceil(zombie.y / BLOCK_SIZE) * BLOCK_SIZE;}zombie.vy = 0;}if (zombie.x < player.x + player.width && zombie.x + zombie.width > player.x &&zombie.y < player.y + player.height && zombie.y + zombie.height > player.y) {if (player.invulnerableFrames === 0) {player.hp -= 2;player.invulnerableFrames = 30;player.vy = -4;document.getElementById("hp-val").innerText = Math.max(0, player.hp);if (player.hp <= 0) {alert("Game Over! Respawning Steve...");player.hp = 20;player.x = BLOCK_SIZE * 5;player.y = (getNoise(5) - 3) * BLOCK_SIZE;document.getElementById("hp-val").innerText = player.hp;}}}}cameraX = player.x - canvas.width / 2 + player.width / 2;}function drawPixelatedBlock(ctx, type, bx, by) {const config = BLOCKS[type];if (!config) return;let pSize = BLOCK_SIZE / 4;let seed = (bx * 7 + by * 13);for (let px = 0; px < 4; px++) {for (let py = 0; py < 4; py++) {let colorIndex = Math.abs((seed + px * 3 + py * 5) % config.colors.length);if (type === GRASS) {if (py === 0) colorIndex = 0;else if (py === 1) colorIndex = 1;else colorIndex = (seed + px) % 2 === 0 ? 2 : 3;}ctx.fillStyle = config.colors[colorIndex];ctx.fillRect(bx * BLOCK_SIZE + px * pSize, by * BLOCK_SIZE + py * pSize, pSize, pSize);}}}function draw() {ctx.fillStyle = "#87CEEB";ctx.fillRect(0, 0, canvas.width, canvas.height);ctx.save();ctx.translate(-cameraX, 0);let startGridX = Math.floor(cameraX / BLOCK_SIZE) - 1;let endGridX = startGridX + SCREEN_BLOCKS_X + 2;for (let gx = startGridX; gx <= endGridX; gx++) {for (let gy = 0; gy < SCREEN_BLOCKS_Y; gy++) {let bType = getGlobalBlock(gx, gy);if (bType !== AIR) drawPixelatedBlock(ctx, bType, gx, gy);}}if (zombie.alive) {ctx.fillStyle = "#146128";ctx.fillRect(zombie.x, zombie.y, zombie.width, zombie.height * 0.6);ctx.fillStyle = "#3c467a";ctx.fillRect(zombie.x, zombie.y + zombie.height * 0.6, zombie.width, zombie.height * 0.4);ctx.fillStyle = "#5a9e6e";ctx.fillRect(zombie.x + 2, zombie.y - 12, zombie.width - 4, 12);ctx.fillStyle = "black";ctx.fillRect(zombie.x - 4, zombie.y - 22, zombie.width + 8, 5);ctx.fillStyle = "red";ctx.fillRect(zombie.x - 4, zombie.y - 22, (zombie.width + 8) * (zombie.hp / 15), 5);}if (player.invulnerableFrames % 4 < 2) {ctx.fillStyle = "#3a85b9";ctx.fillRect(player.x, player.y, player.width, player.height * 0.6);ctx.fillStyle = "#4a3b2c";ctx.fillRect(player.x, player.y + player.height * 0.6, player.width, player.height * 0.4);ctx.fillStyle = "#ffdbac";ctx.fillRect(player.x + 2, player.y - 12, player.width - 4, 12);}ctx.restore();}function updateHotbarUI() {const container = document.getElementById("hotbar-container");container.innerHTML = "";hotbarItems.forEach((itemId, idx) => {let slot = document.createElement("div");slot.className = "slot" + (idx === selectedSlotIndex ? " selected" : "");slot.onclick = () => { selectedSlotIndex = idx; updateHotbarUI(); };let keyLabel = document.createElement("div");keyLabel.className = "slot-key";keyLabel.innerText = idx === 9 ? 0 : idx + 1;let canvasIcon = document.createElement("canvas");canvasIcon.className = "slot-icon";canvasIcon.width = BLOCK_SIZE;canvasIcon.height = BLOCK_SIZE;let iconCtx = canvasIcon.getContext("2d");drawPixelatedBlock(iconCtx, itemId, 0, 0);slot.appendChild(keyLabel);slot.appendChild(canvasIcon);container.appendChild(slot);});}function gameLoop() {update();draw();requestAnimationFrame(gameLoop);}updateHotbarUI();gameLoop();window.addEventListener('resize', () => {canvas.width = window.innerWidth;canvas.height = window.innerHeight;});
