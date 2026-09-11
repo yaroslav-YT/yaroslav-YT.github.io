@@ -1,14 +1,226 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta http-equiv="refresh" content="0; url=https://example.com">
-    <title>Redirecting...</title>
-    <script>
-        window.location.href = "https://www.youtube.com/watch?v=dQw4w9WgXcQ";
-    </script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>minecraft 2d really</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #75a7ff;
+            overflow: hidden;
+            font-family: sans-serif;
+        }
+        canvas {
+            display: block;
+            margin: 0 auto;
+            background-color: #87CEEB; /* Цвет неба */
+        }
+        #ui {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            text-shadow: 2px 2px 4px #000;
+            font-size: 16px;
+            pointer-events: none;
+        }
+    </style>
 </head>
 <body>
-    <p>If you are not redirected automatically, follow this <a href="https://www.youtube.com/watch?v=dQw4w9WgXcQm">link to the new destination</a>.</p>
+
+    <div id="ui">
+        <h3>Управление:</h3>
+        <p>A / D — Движение влево / вправо</p>
+        <p>W / Пробел — Прыжок</p>
+        <p>ЛКМ — Сломать блок</p>
+        <p>ПКМ — Поставить блок</p>
+        <p>Выбранный блок для установки: Земля</p>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+
+<script>
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+
+// Настройка размеров экрана
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+// Игровые константы
+const TILE_SIZE = 32; 
+const COLS = Math.ceil(canvas.width / TILE_SIZE);
+const ROWS = Math.ceil(canvas.height / TILE_SIZE);
+const GRAVITY = 0.4;
+
+// Идентификаторы блоков (ID)
+const AIR = 0;
+const GRASS = 1;
+const DIRT = 2;
+const STONE = 3;
+
+// Цвета блоков
+const BLOCK_COLORS = {
+    [GRASS]: "#5cc43e",
+    [DIRT]: "#85542b",
+    [STONE]: "#737373"
+};
+
+// Генерация сетки мира
+let world = [];
+function generateWorld() {
+    for (let x = 0; x < COLS; x++) {
+        world[x] = [];
+        // Простая синусоида для генерации рельефа холмов
+        let groundHeight = Math.floor(ROWS / 2 + Math.sin(x * 0.15) * 3);
+        
+        for (let y = 0; y < ROWS; y++) {
+            if (y < groundHeight) {
+                world[x][y] = AIR;
+            } else if (y === groundHeight) {
+                world[x][y] = GRASS;
+            } else if (y > groundHeight && y < groundHeight + 4) {
+                world[x][y] = DIRT;
+            } else {
+                world[x][y] = STONE;
+            }
+        }
+    }
+}
+
+// Объект игрока
+const player = {
+    x: 100,
+    y: 50,
+    width: 20,
+    height: 52,
+    vx: 0,
+    vy: 0,
+    speed: 4,
+    jumpForce: 9,
+    onGround: false,
+    color: "#ffc0cb" // Скин Стива (розовый силуэт для простоты)
+};
+
+// Отслеживание нажатий клавиш
+const keys = {};
+window.addEventListener("keydown", e => keys[e.code] = true);
+window.addEventListener("keyup", e => keys[e.code] = false);
+
+// Отключение контекстного меню при клике ПКМ на холст
+canvas.addEventListener("contextmenu", e => e.preventDefault());
+
+// Взаимодействие с миром (клики мыши)
+window.addEventListener("mousedown", e => {
+    const rect = canvas.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+    
+    // Перевод координат мыши в координаты сетки блоков
+    const blockX = Math.floor(mouseX / TILE_SIZE);
+    const blockY = Math.floor(mouseY / TILE_SIZE);
+    
+    if (blockX >= 0 && blockX < COLS && blockY >= 0 && blockY < ROWS) {
+        if (e.button === 0) {
+            // ЛКМ: Разрушить блок
+            world[blockX][blockY] = AIR;
+        } else if (e.button === 2) {
+            // ПКМ: Поставить землю (только на пустое место)
+            if (world[blockX][blockY] === AIR) {
+                world[blockX][blockY] = DIRT;
+            }
+        }
+    }
+});
+
+// Проверка коллизий (физика твердых блоков)
+function checkCollision(x, y) {
+    const blockX = Math.floor(x / TILE_SIZE);
+    const blockY = Math.floor(y / TILE_SIZE);
+    
+    if (blockX < 0 || blockX >= COLS || blockY < 0 || blockY >= ROWS) {
+        return true; // Границы экрана твердые
+    }
+    return world[blockX][blockY] !== AIR;
+}
+
+// Физика и логика обновлений
+function update() {
+    // Движение по горизонтали
+    player.vx = 0;
+    if (keys["KeyA"] || keys["ArrowLeft"]) player.vx = -player.speed;
+    if (keys["KeyD"] || keys["ArrowRight"]) player.vx = player.speed;
+
+    // Прыжок
+    if ((keys["Space"] || keys["KeyW"] || keys["ArrowUp"]) && player.onGround) {
+        player.vy = -player.jumpForce;
+        player.onGround = false;
+    }
+
+    // Применение гравитации
+    player.vy += GRAVITY;
+
+    // Проверка столкновений по оси X
+    player.x += player.vx;
+    if (checkCollision(player.x, player.y) || checkCollision(player.x + player.width, player.y) ||
+        checkCollision(player.x, player.y + player.height - 1) || checkCollision(player.x + player.width, player.y + player.height - 1)) {
+        player.x -= player.vx;
+    }
+
+    // Проверка столкновений по оси Y
+    player.y += player.vy;
+    player.onGround = false;
+    if (checkCollision(player.x, player.y) || checkCollision(player.x + player.width, player.y) ||
+        checkCollision(player.x, player.y + player.height) || checkCollision(player.x + player.width, player.y + player.height)) {
+        
+        if (player.vy > 0) {
+            player.onGround = true;
+            // Выравнивание по верхней границе блока
+            player.y = Math.floor((player.y + player.height) / TILE_SIZE) * TILE_SIZE - player.height;
+        } else if (player.vy < 0) {
+            // Удар головой о потолок
+            player.y = Math.ceil(player.y / TILE_SIZE) * TILE_SIZE;
+        }
+        player.vy = 0;
+    }
+}
+
+// Рендеринг (отрисовка) игры
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Рисуем блоки
+    for (let x = 0; x < COLS; x++) {
+        for (let y = 0; y < ROWS; y++) {
+            let blockType = world[x][y];
+            if (blockType !== AIR) {
+                ctx.fillStyle = BLOCK_COLORS[blockType];
+                ctx.fillRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+                // Рисуем сетку вокруг блоков
+                ctx.strokeStyle = "rgba(0, 0, 0, 0.1)";
+                ctx.strokeRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+            }
+        }
+    }
+
+    // Рисуем игрока
+    ctx.fillStyle = player.color;
+    ctx.fillRect(player.x, player.y, player.width, player.height);
+}
+
+// Главный игровой цикл
+function gameLoop() {
+    update();
+    draw();
+    requestAnimationFrame(gameLoop);
+}
+
+// Старт игры
+generateWorld();
+gameLoop();
+</script>
+
 </body>
 </html>
